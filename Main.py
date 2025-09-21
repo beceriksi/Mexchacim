@@ -4,11 +4,11 @@ import os, time, ccxt, pandas as pd, requests
 # ---- Ayarlar (ENV ile değiştirilebilir) ----
 EXCHANGE         = os.getenv("EXCHANGE", "mexc")      # binance|mexc|kucoin|bybit|gateio
 QUOTE            = os.getenv("QUOTE", "USDT")
-TIMEFRAME        = os.getenv("TIMEFRAME", "4h")
+TIMEFRAME        = os.getenv("TIMEFRAME", "1h")
 LIMIT            = int(os.getenv("LIMIT", "200"))
 VOL_LOOKBACK     = int(os.getenv("VOL_LOOKBACK", "10"))
 VOL_MULTIPLIER   = float(os.getenv("VOL_MULTIPLIER", "2.0"))
-PRICE_MAX_CHANGE = float(os.getenv("PRICE_MAX_CHANGE", "0.03"))
+PRICE_MAX_CHANGE = float(os.getenv("PRICE_MAX_CHANGE", "0.05"))
 PRICE_MIN_CHANGE = float(os.getenv("PRICE_MIN_CHANGE", "0.00"))   # 0.00 → kırmızı mumları ele
 BULLISH_ONLY     = os.getenv("BULLISH_ONLY", "true").lower() == "true"  # True → yeşil + tepeye yakın
 MAX_MARKETS      = int(os.getenv("MAX_MARKETS", "400"))
