@@ -24,20 +24,19 @@ jobs:
 
       - name: Run scanner
         env:
-          # --- Telegram Secrets (GitHub repo Settings → Secrets and variables → Actions) ---
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID:        ${{ secrets.CHAT_ID }}
-
-          # --- Opsiyonel ayarlar (değiştirmek istersen buradan koy) ---
-          EXCHANGE: "mexc"           # binance|mexc|kucoin|bybit|gateio
+          EXCHANGE: "mexc"
           QUOTE: "USDT"
           TIMEFRAME: "4h"
           LIMIT: "200"
           VOL_LOOKBACK: "10"
           VOL_MULTIPLIER: "2.0"
           PRICE_MAX_CHANGE: "0.03"
+          PRICE_MIN_CHANGE: "0.00"   # kırmızı mumları ele
+          BULLISH_ONLY: "true"       # sadece yeşil + tepeye yakın
           MAX_MARKETS: "400"
-          CSV_OUT: "volume_spike_4h.csv"
+          CSV_OUT: "volume_spike_4h_clean.csv"
         run: |
           python main.py
 
@@ -46,6 +45,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: volume_spike_4h
-          path: volume_spike_4h.csv
+          path: volume_spike_4h_clean.csv
           if-no-files-found: ignore
-          
