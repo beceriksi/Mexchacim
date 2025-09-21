@@ -1,14 +1,7 @@
-# main.py
-# 4 saatlik mumlarda erken hacim akışı taraması:
-# - Hacim[t] >= VOL_MULTIPLIER * ortalama_hacim(son VOL_LOOKBACK bar)
-# - Fiyat artışı <= PRICE_MAX_CHANGE (fiyat patlamadan önce yakala)
-# Sonuçları Telegram'a yollar.
-
+# main.py — 4h “temiz” hacim botu (kırmızı mumları ele, yeşil + tepeye yakın şartı)
 import os, time, ccxt, pandas as pd, requests
-from datetime import datetime
-import pytz
 
-# ---- Ayarlar (ENV üzerinden değiştirilebilir) ----
+# ---- Ayarlar (ENV ile değiştirilebilir) ----
 EXCHANGE         = os.getenv("EXCHANGE", "mexc")      # binance|mexc|kucoin|bybit|gateio
 QUOTE            = os.getenv("QUOTE", "USDT")
 TIMEFRAME        = os.getenv("TIMEFRAME", "4h")
@@ -16,11 +9,13 @@ LIMIT            = int(os.getenv("LIMIT", "200"))
 VOL_LOOKBACK     = int(os.getenv("VOL_LOOKBACK", "10"))
 VOL_MULTIPLIER   = float(os.getenv("VOL_MULTIPLIER", "2.0"))
 PRICE_MAX_CHANGE = float(os.getenv("PRICE_MAX_CHANGE", "0.03"))
-MAX_MARKETS      = int(os.getenv("MAX_MARKETS", "400"))  # taranacak USDT çifti
-CSV_OUT          = os.getenv("CSV_OUT", "volume_spike_4h.csv")
+PRICE_MIN_CHANGE = float(os.getenv("PRICE_MIN_CHANGE", "0.00"))   # 0.00 → kırmızı mumları ele
+BULLISH_ONLY     = os.getenv("BULLISH_ONLY", "true").lower() == "true"  # True → yeşil + tepeye yakın
+MAX_MARKETS      = int(os.getenv("MAX_MARKETS", "400"))
+CSV_OUT          = os.getenv("CSV_OUT", "volume_spike_4h_clean.csv")
 
-TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN")  # GitHub Secret
-CHAT_ID          = os.getenv("CHAT_ID")         # GitHub Secret (string veya int)
+TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN")  # GitHub Secrets
+CHAT_ID          = os.getenv("CHAT_ID")         # GitHub Secrets
 
 def load_exchange(name):
     ex = getattr(ccxt, name)({'enableRateLimit': True})
@@ -35,18 +30,31 @@ def pick_symbols(ex, quote="USDT", max_markets=500):
     return sorted(set(syms))[:max_markets]
 
 def early_volume_spike(df, idx):
-    # Yeterli geçmiş yoksa
     if idx < max(VOL_LOOKBACK, 1):
         return False
+
+    # Hacim: v[t] >= MULT * ort(v[t-LOOKBACK:t])
     vol_avg = df["volume"].iloc[idx - VOL_LOOKBACK: idx].mean()
     vol_cond = df["volume"].iloc[idx] >= VOL_MULTIPLIER * max(vol_avg, 1e-12)
 
-    close_now = df["close"].iloc[idx]
-    close_prev = df["close"].iloc[idx - 1]
-    price_change = (close_now - close_prev) / max(close_prev, 1e-12)
-    price_cond = price_change <= PRICE_MAX_CHANGE
+    # Fiyat bandı: PRICE_MIN_CHANGE <= change <= PRICE_MAX_CHANGE
+    c_now  = df["close"].iloc[idx]
+    c_prev = df["close"].iloc[idx - 1]
+    change = (c_now - c_prev) / max(c_prev, 1e-12)
+    price_band_ok = (change >= PRICE_MIN_CHANGE) and (change <= PRICE_MAX_CHANGE)
+    if not (vol_cond and price_band_ok):
+        return False
 
-    return vol_cond and price_cond
+    # Bullish only: yeşil + tepeye yakın + anlamlı gövde
+    if BULLISH_ONLY:
+        o = df["open"].iloc[idx]; h = df["high"].iloc[idx]; l = df["low"].iloc[idx]; c = c_now
+        rng = max(h - l, 1e-12)
+        body = abs(c - o) / rng
+        near_high = (h - c) / rng <= 0.4   # tepeye %40 yakın
+        if not (c > o and body >= 0.35 and near_high):
+            return False
+
+    return True
 
 def analyze_symbol(ex, symbol):
     try:
@@ -92,23 +100,21 @@ def main():
             hits.append(res)
             print(f"[MATCH] {sym} @ {res['bar_time']} close={res['close']:.6g}")
         if i % 20 == 0:
-            time.sleep(0.25)  # API nezaket beklemesi
+            time.sleep(0.25)
 
     df = pd.DataFrame(hits)
     if not df.empty:
         df.sort_values(["bar_time", "symbol"], inplace=True)
         df.to_csv(CSV_OUT, index=False)
-
-        # Telegram mesajı
-        lines = ["🔥 4h Erken Hacim Sinyalleri 🔥", ""]
+        lines = ["🔥 4h Erken Hacim Sinyalleri (Temiz) 🔥", ""]
         for _, r in df.iterrows():
             lines.append(f"{r['symbol']} | Close={r['close']:.6g} | Vol={int(r['volume']):,}")
         send_to_telegram("\n".join(lines))
         print(f"\nCSV kaydedildi: {CSV_OUT}")
     else:
         print("Hiç eşleşme yok.")
-        send_to_telegram("📭 4h taramasında eşleşme yok.")
+        send_to_telegram("📭 4h taramasında eşleşme yok. (Temiz filtre)")
 
 if __name__ == "__main__":
     main()
-  
+    
